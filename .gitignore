@@ -1,0 +1,4 @@
+build/
+*.pyc
+lib_clustering/clustering.cpp
+lib_clustering/clustering.html
