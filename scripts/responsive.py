@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import rospy
 from sensor_msgs.msg import LaserScan
+import clustering
 
 class Responsive(object):
     def __init__(self):
@@ -37,14 +38,12 @@ class Responsive(object):
         max_ds = self.kMaxObstacleVel_ms * dt
         ds_capped = ds
         ds_capped[np.abs(ds) > max_ds] = 0
-        s_next = np.maximum(0, s + ds_capped)
+        s_next = np.maximum(0, s + ds_capped).astype(np.float32)
 
-        # filter
-        absdiffs =np.abs(np.diff(s_next)) # right diff
-        absneighbordiffs = np.maximum(np.roll(absdiffs, 1), np.roll(absdiffs, -1))
-        peaks = np.logical_and(absdiffs > 0.5, absneighbordiffs > 0.5)
-        s_next[np.where(peaks)[0]] = 0
-        
+        # cluster
+        clusters, x, y = clustering.euclidean_clustering(s_next, 0.05)
+        cluster_sizes = clustering.cluster_sizes(len(s_next), clusters)
+        s_next[cluster_sizes <= 3] = 25
 
 
         if False:
@@ -58,8 +57,15 @@ class Responsive(object):
             plt.pause(0.001)
 
 
+
         msg_next = deepcopy(msg)
         msg_next.ranges = s_next
+        # for pretty colors
+        cluster_ids = clustering.cluster_ids(len(x), clusters)
+        random_map = np.arange(len(cluster_ids))
+        np.random.shuffle(random_map)
+        cluster_ids = random_map[cluster_ids]
+        msg_next.intensities = cluster_ids
         self.pubs[0].publish(msg_next)
 
         msg_prev = deepcopy(msg)

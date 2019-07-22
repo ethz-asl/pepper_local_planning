@@ -68,6 +68,7 @@ def euclidean_clustering(np.float32_t[:] ranges, thresh=0.5):
     return clusters, x, y
 
 def cluster_ids(n_points, clusters):
+    """ returns for each point, its cluster id """
     max_id = np.max(np.max(clusters))
     if max_id > n_points:
         raise ValueError("n_points ({}) smaller than cluster point ids ({}) for clusters {}".format(
@@ -81,4 +82,17 @@ def cluster_ids(n_points, clusters):
 
     return cluster_ids
 
+def cluster_sizes(n_points, clusters):
+    """ returns for each point, its cluster size """
+    max_id = np.max(np.max(clusters))
+    if max_id > n_points:
+        raise ValueError("n_points ({}) smaller than cluster point ids ({}) for clusters {}".format(
+            n_points, max_id, clusters))
+    cluster_sizes = np.zeros((n_points), dtype=np.int64)
 
+    for i in range(len(clusters)):
+        c = clusters[i]
+        for p in c:
+            cluster_sizes[int(p)] = len(c)
+
+    return cluster_sizes
