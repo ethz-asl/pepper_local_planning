@@ -35,10 +35,13 @@ class Responsive(object):
         self.STOP = True # disables autonomous control
         # ROS
         rospy.init_node('responsive', anonymous=True)
-        rospy.Subscriber(self.kLidarTopic, LaserScan, self.scan_callback)
-        rospy.Subscriber(self.kFixedFrameTopic, Odometry, self.odom_callback)
+        rospy.Subscriber(self.kLidarTopic, LaserScan, self.scan_callback, queue_size=1)
+        rospy.Subscriber(self.kFixedFrameTopic, Odometry, self.odom_callback, queue_size=1)
         self.pubs = [rospy.Publisher("debug{}".format(i), LaserScan, queue_size=1) for i in range(3)]
         self.cmd_vel_pub = rospy.Publisher(self.kCmdVelTopic, Twist, queue_size=1)
+        # tf
+        self.tf_listener = tf.TransformListener()
+        self.br = tf.TransformBroadcaster()
         # Timers
         rospy.Timer(rospy.Duration(0.001), self.tf_callback)
         # Services
@@ -46,12 +49,12 @@ class Responsive(object):
                 self.stop_autonomous_motion_service_call)
         rospy.Service('resume_autonomous_motion', Trigger, 
                 self.resume_autonomous_motion_service_call)
-        # tf
-        self.tf_listener = tf.TransformListener()
-        self.br = tf.TransformBroadcaster()
         try:
             rospy.spin()
         except KeyboardInterrupt:
+            # publish cmd_vel
+            cmd_vel_msg = Twist()
+            self.cmd_vel_pub.publish(cmd_vel_msg)
             rospy.signal_shutdown('KeyboardInterrupt')
 
     def odom_callback(self, msg):
@@ -141,8 +144,8 @@ class Responsive(object):
         if not self.STOP:
             # publish cmd_vel
             cmd_vel_msg = Twist()
-            cmd_vel_msg.linear.x = best_u
-            cmd_vel_msg.linear.y = best_v
+            cmd_vel_msg.linear.x = best_u * 0.8
+            cmd_vel_msg.linear.y = best_v * 0.8
             self.cmd_vel_pub.publish(cmd_vel_msg)
 
         # publish cmd_vel vis
