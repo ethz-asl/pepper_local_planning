@@ -29,12 +29,12 @@ cdef cranges_to_xy(np.float32_t[:] ranges, np.float32_t[:] angles,
 @cython.wraparound(False)
 @cython.nonecheck(False)
 @cython.cdivision(True)
-def euclidean_clustering(np.float32_t[:] ranges, thresh=0.5):
+def euclidean_clustering(np.float32_t[:] ranges, np.float32_t[:] angles, thresh=0.5):
     # assume angles from 0 to 2pi
     cdef int n_points = ranges.shape[0]
-    cdef np.float32_t[:] angles = np.linspace(0, 2*np.pi, ranges.shape[0]+1, dtype=np.float32)[:-1]
     cdef np.float32_t[:] x = np.zeros((n_points), dtype=np.float32)
     cdef np.float32_t[:] y = np.zeros((n_points), dtype=np.float32)
+    # get points as x y coordinates
     cranges_to_xy(ranges, angles, x, y)
 
     cdef np.float32_t THRESH = thresh
@@ -46,6 +46,9 @@ def euclidean_clustering(np.float32_t[:] ranges, thresh=0.5):
     cdef np.float32_t yi
     cdef np.float32_t dx
     cdef np.float32_t dy
+    # for each point:
+    # find a cluster within THRESH of point, add point to that cluster.
+    # if no cluster is found within THRESH of point, create new cluster with point in it
     for i in range(n_points):
         create_new_cluster = True
         xi = x[i]
