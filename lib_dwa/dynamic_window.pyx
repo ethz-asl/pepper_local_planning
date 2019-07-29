@@ -27,13 +27,14 @@ from matplotlib.pyplot import imread
 def linear_dwa(np.float32_t[:] s_next,
         np.float32_t[:] angles,
         u, v, gx, gy, dt,
-        DV=0.1,
-        UMIN=-0.1,
+        DV=0.1, # velocity sampling resolution
+        UMIN=-0.5,
         UMAX=0.5,
         VMIN=-0.5,
         VMAX=0.5,
         AMAX=0.4,
         COMFORT_RADIUS_M=0.5,
+        PLANNING_RADIUS_M=0.7,
         ):
 
     # Specification vel limits
@@ -69,6 +70,7 @@ def linear_dwa(np.float32_t[:] s_next,
     cdef np.float32_t cMAX_GOAL_NORM = 3
     cdef np.float32_t cdt = np.float32(dt)
     cdef np.float32_t cCOMFORT_RADIUS_M = np.float32(COMFORT_RADIUS_M)
+    cdef np.float32_t cPLANNING_RADIUS_M = np.float32(PLANNING_RADIUS_M)
     cdef np.float32_t[:] us_list = np.arange(UMIN, UMAX, DV, dtype=np.float32)
     cdef np.float32_t[:] vs_list = np.arange(VMIN, VMAX, DV, dtype=np.float32)
     cdef np.float32_t[:] s_next_shift = np.zeros_like(s_next, dtype=np.float32)
@@ -119,14 +121,18 @@ def linear_dwa(np.float32_t[:] s_next,
                     min_dist_s = shifted_r
             if min_dist > cCOMFORT_RADIUS_M:
                 # normal situation
-                if min_dist_s > cCOMFORT_RADIUS_M:
+                if min_dist_s < cCOMFORT_RADIUS_M:
+                    scan_score = 0
+                elif min_dist_s < cPLANNING_RADIUS_M: # linear ramp 0 to 1
+                    scan_score = (min_dist_s - cCOMFORT_RADIUS_M) / (cPLANNING_RADIUS_M - cCOMFORT_RADIUS_M)
+                else:
+                    scan_score = 1
+            else:
+                # we are far inside an obstacle, priority is evasion TODO: improve 
+                if min_dist_s > min_dist:
                     scan_score = 1
                 else:
                     scan_score = 0
-            else:
-                # we are far inside an obstacle, priority is evasion TODO: improve 
-                scan_score = min_dist_s - min_dist
-                goal_score = 1 + goal_score * 0.1 # make goal score a small influence to the scan score
             score = scan_score * goal_score
             print("{:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f}".format(gx, gy, xs, ys, goal_score, score))
             if score > best_score:
