@@ -60,6 +60,7 @@ def linear_dwa(np.float32_t[:] s_next,
     cdef np.float32_t dgys = 0 # sampled y dist to goal
     cdef np.float32_t min_dist = 100
     cdef np.float32_t min_dist_s = 100
+    cdef np.float32_t improvement = 0
     cdef np.float32_t scan_score = 0
     cdef np.float32_t goal_score = 0
     cdef np.float32_t score = 0
@@ -123,18 +124,20 @@ def linear_dwa(np.float32_t[:] s_next,
                 # normal situation
                 if min_dist_s < cCOMFORT_RADIUS_M:
                     scan_score = 0
-                elif min_dist_s < cPLANNING_RADIUS_M: # linear ramp 0 to 1
-                    scan_score = (min_dist_s - cCOMFORT_RADIUS_M) / (cPLANNING_RADIUS_M - cCOMFORT_RADIUS_M)
+#                 elif min_dist_s < cPLANNING_RADIUS_M: # linear ramp 0 to 1
+#                     scan_score = (min_dist_s - cCOMFORT_RADIUS_M) / (cPLANNING_RADIUS_M - cCOMFORT_RADIUS_M)
                 else:
                     scan_score = 1
             else:
                 # we are far inside an obstacle, priority is evasion TODO: improve 
-                if min_dist_s > min_dist:
-                    scan_score = 1
+                improvement = min_dist_s - min_dist
+                if improvement > 0:
+                    scan_score = improvement + 0.1 * goal_score
+                    goal_score = 1
                 else:
                     scan_score = 0
             score = scan_score * goal_score
-            print("{:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f}".format(gx, gy, xs, ys, goal_score, score))
+#             print("{:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f}".format(gx, gy, xs, ys, goal_score, score))
             if score > best_score:
                 best_score = score
                 best_u = us

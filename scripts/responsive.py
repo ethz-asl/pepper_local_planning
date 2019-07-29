@@ -125,6 +125,7 @@ class Responsive(object):
 
 
         DWA_DT = 0.5
+        COMFORT_RADIUS_M = 0.7
         tic = timer()
         best_u, best_v, best_score = dynamic_window.linear_dwa(s_next,
             angles,
@@ -135,17 +136,17 @@ class Responsive(object):
             VMIN=-0.5,
             VMAX=0.5,
             AMAX=10.,
-            COMFORT_RADIUS_M=0.5,
+            COMFORT_RADIUS_M=COMFORT_RADIUS_M,
             )
         toc = timer()
-        print(best_u * DWA_DT, best_v * DWA_DT, best_score)
-        print("DWA: {:.2f} Hz".format(1/(toc-tic)))
+#         print(best_u * DWA_DT, best_v * DWA_DT, best_score)
+#         print("DWA: {:.2f} Hz".format(1/(toc-tic)))
 
         if not self.STOP:
             # publish cmd_vel
             cmd_vel_msg = Twist()
-            cmd_vel_msg.linear.x = best_u * 0.8
-            cmd_vel_msg.linear.y = best_v * 0.8
+            cmd_vel_msg.linear.x = best_u * 0.5
+            cmd_vel_msg.linear.y = best_v * 0.5
             self.cmd_vel_pub.publish(cmd_vel_msg)
 
         # publish cmd_vel vis
@@ -194,6 +195,23 @@ class Responsive(object):
         pt.y = 0 + gy
         pt.z = 0.03
         mk.points.append(pt)
+        pub.publish(mk)
+        pub = rospy.Publisher("/dwa_radius", Marker, queue_size=1)
+        mk = Marker()
+        mk.header.frame_id = self.kRobotFrame
+        mk.ns = "radius"
+        mk.id = 0
+        mk.type = 3
+        mk.action = 0
+        mk.pose.position.z = -0.1
+        mk.scale.x = COMFORT_RADIUS_M * 2
+        mk.scale.y = COMFORT_RADIUS_M * 2
+        mk.scale.z = 0.01
+        mk.color.b = 1
+        mk.color.g = 1
+        mk.color.r = 1
+        mk.color.a = 1
+        mk.frame_locked = True
         pub.publish(mk)
 
         # publish scan prediction
