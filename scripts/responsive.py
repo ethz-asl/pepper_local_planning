@@ -33,7 +33,7 @@ class Responsive(object):
         self.tf_rob_in_fix = None
         self.tf_goal_in_fix = None
         self.lock = threading.Lock() # for avoiding race conditions
-        self.STOP = False # disables autonomous control
+        self.STOP = True # disables autonomous control
         self.is_tracking_global_path = False
         self.waypoint_dtg = None # DTG of current waypoint along global path. can only decrease if path is constant.
         # ROS
