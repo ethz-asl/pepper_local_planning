@@ -33,6 +33,7 @@ def linear_dwa(np.float32_t[:] s_next,
         VMIN=-0.5,
         VMAX=0.5,
         AMAX=0.4,
+        NOISE=0., # adds randomness to the sampled velocity, in the hope to reach otherwise unreachable velocities
         COMFORT_RADIUS_M=0.5,
         PLANNING_RADIUS_M=0.7,
         ):
@@ -72,8 +73,10 @@ def linear_dwa(np.float32_t[:] s_next,
     cdef np.float32_t cdt = np.float32(dt)
     cdef np.float32_t cCOMFORT_RADIUS_M = np.float32(COMFORT_RADIUS_M)
     cdef np.float32_t cPLANNING_RADIUS_M = np.float32(PLANNING_RADIUS_M)
-    cdef np.float32_t[:] us_list = np.arange(UMIN, UMAX, DV, dtype=np.float32)
-    cdef np.float32_t[:] vs_list = np.arange(VMIN, VMAX, DV, dtype=np.float32)
+    cdef np.float32_t[:] us_list = np.append(np.arange(UMIN, UMAX, DV), [0]).astype(np.float32)
+    cdef np.float32_t[:] vs_list = np.append(np.arange(VMIN, VMAX, DV), [0]).astype(np.float32)
+    cdef np.float32_t[:] noise_u = np.append(np.random.normal(0, NOISE, size=(len(us_list)-1)), [0]).astype(np.float32)
+    cdef np.float32_t[:] noise_v = np.append(np.random.normal(0, NOISE, size=(len(vs_list)-1)), [0]).astype(np.float32)
     cdef np.float32_t[:] s_next_shift = np.zeros_like(s_next, dtype=np.float32)
     # find current closest point
     for k in range(len(s_next)):
@@ -84,9 +87,9 @@ def linear_dwa(np.float32_t[:] s_next,
             min_dist = r
     # sample in window and score
     for i in range(len(us_list)):
-        us = us_list[i]
+        us = us_list[i] + noise_u[i]
         for j in range(len(vs_list)):
-            vs = vs_list[j]
+            vs = vs_list[j] + noise_v[j]
             # dynamic limits as condition (circle around current u v)
             du = us - u
             dv = vs - v
