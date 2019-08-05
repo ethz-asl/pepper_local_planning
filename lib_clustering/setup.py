@@ -5,6 +5,6 @@ import os
 
 setup(
     ext_modules = cythonize("clustering.pyx", annotate=True),
-    name="clustering",
+    name="lib_clustering",
 )
 

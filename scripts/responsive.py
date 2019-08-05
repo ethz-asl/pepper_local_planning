@@ -18,7 +18,8 @@ import clustering
 import dynamic_window
 
 class Responsive(object):
-    def __init__(self):
+    def __init__(self, args):
+        self.args = args
         # consts
         self.kLidarTopic = "/combined_scan"
         self.kFixedFrameTopic = "/pepper_robot/odom"
@@ -34,6 +35,8 @@ class Responsive(object):
         self.tf_goal_in_fix = None
         self.lock = threading.Lock() # for avoiding race conditions
         self.STOP = True # disables autonomous control
+        if args.no_stop:
+            self.STOP = False
         self.is_tracking_global_path = False
         self.waypoint_dtg = None # DTG of current waypoint along global path. can only decrease if path is constant.
         # ROS
@@ -362,7 +365,8 @@ class Responsive(object):
         self.msg_prev = msg
 
         atoc = timer()
-#         print("DWA callback: {:.2f} Hz".format(1/(atoc-atic)))
+        if self.args.hz:
+            print("DWA callback: {:.2f} Hz".format(1/(atoc-atic)))
 
 
     def stop_autonomous_motion_service_call(self, req):
@@ -379,5 +383,31 @@ class Responsive(object):
             self.STOP = False
         return TriggerResponse(True, "")
 
+def parse_args():
+    import argparse
+    ## Arguments
+    parser = argparse.ArgumentParser(description='Responsive motion planner for pepper')
+    parser.add_argument('--no-stop',
+            action='store_true',
+            help='if set, the planner will immediately send cmd_vel instead of waiting for hand-over',
+            )
+    parser.add_argument('--hz',
+            action='store_true',
+            help='if set, prints planner frequency to script output',
+            )
+    ARGS, unknown_args = parser.parse_known_args()
+
+    # deal with unknown arguments
+    # ROS appends some weird args, ignore those, but not the rest
+    if unknown_args:
+        rosparser = argparse.ArgumentParser()
+        rosparser.add_argument(
+                '__log:')
+        rosparser.add_argument(
+                '__name:')
+        rosargs = rosparser.parse_args(unknown_args)
+    return ARGS
+
 if __name__=="__main__":
-    responsive = Responsive()
+    args = parse_args()
+    responsive = Responsive(args)
