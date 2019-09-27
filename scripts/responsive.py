@@ -273,8 +273,8 @@ class Responsive(object):
         if not self.STOP:
             # publish cmd_vel
             cmd_vel_msg = Twist()
-            cmd_vel_msg.linear.x = best_u * 0.5
-            cmd_vel_msg.linear.y = best_v * 0.5
+            cmd_vel_msg.linear.x = np.clip(best_u * 0.5, -0.3, 0.3)
+            cmd_vel_msg.linear.y = np.clip(best_v * 0.5, -0.3, 0.3)
             cmd_vel_msg.angular.z = best_w
             self.cmd_vel_pub.publish(cmd_vel_msg)
 
@@ -380,6 +380,12 @@ class Responsive(object):
         with self.lock:
             if self.STOP:
                 print("Assuming robot control")
+                # re set goal
+                if self.tf_rob_in_fix is None:
+                    print("couldn't reset goal: tf_rob_in_fix not found yet")
+                else:
+                    self.tf_goal_in_fix = self.tf_rob_in_fix
+                    print("goal set")
             self.STOP = False
         return TriggerResponse(True, "")
 
