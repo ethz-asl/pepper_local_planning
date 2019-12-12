@@ -189,8 +189,9 @@ class Responsive(object):
         if not self.STOP:
             # publish cmd_vel
             cmd_vel_msg = Twist()
+            SIDEWAYS_FACTOR = 0.3 if self.args.forward_only else 1.
             cmd_vel_msg.linear.x = np.clip(best_u * 0.5, -0.3, 0.3)
-            cmd_vel_msg.linear.y = np.clip(best_v * 0.5, -0.3, 0.3)
+            cmd_vel_msg.linear.y = np.clip(best_v * 0.5 * SIDEWAYS_FACTOR, -0.3, 0.3)
             cmd_vel_msg.angular.z = best_w
             self.cmd_vel_pub.publish(cmd_vel_msg)
 
