@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="mapname" default="asl" />
+  <arg name="mapfolder" default="$(find ia_ros)/../python/maps"/>
+  <arg name="script_args" default=""/>
+
+  <!-- Simulator -->
+  <include file="$(find ia_ros)/launch/ros_sim_node.launch">
+    <arg name="rviz" value="false" />
+  </include>
+
+  <!-- Gmapping & Map Matching -->
+  <include file="$(find asl_pepper_gmapping)/launch/gmapping.launch">
+    <arg name="output" value="log"/>
+  </include>
+  <include file="$(find map_matcher)/launch/map_matcher.launch">
+    <arg name="output" value="log" />
+    <arg name="slam_map_topic" value="/gmap"/>
+    <arg name="reference_map_name" value="$(arg mapname)"/>
+    <arg name="maps_folder" value="$(arg mapfolder)"/>
+  </include>
+
+  <!-- Global Path Planning -->
+  <node pkg="asl_pepper_motion_planning" type="global_planner"
+    name="global_planner" args="--hz" output="log" >
+    <param name="reference_map_name" value="$(arg mapname)"/>
+    <param name="reference_map_folder" value="$(arg mapfolder)"/>
+  </node>
+
+  <!-- ros_run_command does not forward node namespace to script, so the script gets param from absolute namespace /python_planner/PARAM_NAME -->
+  <node pkg="ros_run_command" type="ros_run_command" name="python_planner" output="screen"
+    args="python /home/daniel/Documents/responsive/scripts/responsive.py $(arg script_args)">
+    <param name="reference_map_name" value="$(arg mapname)"/>
+  </node>
+
+  <!-- Rviz -->
+  <node type="rviz" name="rviz" pkg="rviz" args="-d $(env HOME)/.rviz/responsive.rviz" />
+</launch>

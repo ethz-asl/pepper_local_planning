@@ -246,15 +246,16 @@ class Responsive(object):
 
         DWA_DT = 0.5
         COMFORT_RADIUS_M = self.kRobotComfortRadius_m
+        MAX_XY_VEL = 0.5
         tic = timer()
         best_u, best_v, best_score = dynamic_window.linear_dwa(s_next,
             angles,
             u, v, gx, gy, DWA_DT,
             DV=0.05,
-            UMIN=-0.5,
-            UMAX=0.5,
-            VMIN=-0.5,
-            VMAX=0.5,
+            UMIN=0 if self.args.forward_only else -MAX_XY_VEL,
+            UMAX=MAX_XY_VEL,
+            VMIN=-MAX_XY_VEL,
+            VMAX=MAX_XY_VEL,
             AMAX=10.,
             COMFORT_RADIUS_M=COMFORT_RADIUS_M,
             )
@@ -403,6 +404,11 @@ def parse_args():
             action='store_true',
             help='if set, prints planner frequency to script output',
             )
+    parser.add_argument('--forward-only',
+            action='store_true',
+            help='if set, the DWA planner is only allowed to move forwards',
+            )
+
     ARGS, unknown_args = parser.parse_known_args()
 
     # deal with unknown arguments
