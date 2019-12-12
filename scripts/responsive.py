@@ -24,10 +24,12 @@ class Responsive(object):
         self.kLidarTopic = "/combined_scan"
         self.kFixedFrameTopic = "/pepper_robot/odom"
         self.kCmdVelTopic = "/cmd_vel"
-        self.kGlobalPathTopic = "/planner/GlobalPath"
+        self.kGlobalPathTopic = "/global_planner/global_path"
         self.kFixedFrame = "odom" # ideally something truly fixed, like /map
         self.kRobotFrame = "base_footprint"
         self.kMaxObstacleVel_ms = 10. # [m/s]
+        self.kRobotComfortRadius_m = rospy.get_param("/robot_comfort_radius", 0.7)
+        self.kRobotRadius_m = rospy.get_param("/robot_radius", 0.3)
         # vars
         self.msg_prev = None
         self.odom = None
@@ -122,7 +124,7 @@ class Responsive(object):
             ## robot xy in fixed frame
             rob_fix_xy =  Pose2D(tf_rob_in_fix)[:2]
             ## check if goal has been reached
-            if np.linalg.norm(rob_fix_xy - gp_fix_xy[-1]) < 1.:
+            if np.linalg.norm(rob_fix_xy - gp_fix_xy[-1]) < self.kRobotRadius_m:
                 print("global_goal reached")
                 # set goal as global goal and stop tracking
                 self.is_tracking_global_path = False
@@ -243,7 +245,7 @@ class Responsive(object):
 
 
         DWA_DT = 0.5
-        COMFORT_RADIUS_M = 0.7
+        COMFORT_RADIUS_M = self.kRobotComfortRadius_m
         tic = timer()
         best_u, best_v, best_score = dynamic_window.linear_dwa(s_next,
             angles,
