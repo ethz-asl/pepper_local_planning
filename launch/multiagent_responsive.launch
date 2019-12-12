@@ -25,6 +25,8 @@
     name="global_planner" args="--hz" output="log" >
     <param name="reference_map_name" value="$(arg mapname)"/>
     <param name="reference_map_folder" value="$(arg mapfolder)"/>
+    <param name="reference_map_downsampling_passes" value="1" />
+    <param name="waypoint_distance" value="1.5" />
   </node>
 
   <!-- ros_run_command does not forward node namespace to script, so the script gets param from absolute namespace /python_planner/PARAM_NAME -->
