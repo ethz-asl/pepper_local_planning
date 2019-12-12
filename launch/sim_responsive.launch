@@ -4,6 +4,9 @@
   <arg name="mapfolder" default="$(env HOME)/maps"/>
   <arg name="script_args" default=""/>
 
+  <!-- Simulator -->
+  <include file="$(find asl_pepper_2d_simulator)/launch/pepper_2d_simulator.launch"/>
+
   <!-- Gmapping & Map Matching -->
   <include file="$(find asl_pepper_gmapping)/launch/gmapping.launch">
     <arg name="output" value="log"/>
