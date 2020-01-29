@@ -26,10 +26,9 @@
     <param name="waypoint_distance" value="1.5" />
   </node>
 
-  <!-- ros_run_command does not forward node namespace to script, so the script gets param from absolute namespace /python_planner/PARAM_NAME -->
-  <node pkg="ros_run_command" type="ros_run_command" name="python_planner" output="screen"
-    args="python /home/daniel/Documents/responsive/scripts/responsive.py $(arg script_args)">
-    <param name="reference_map_name" value="$(arg mapname)"/>
+  <!-- Responsive planner -->
+  <node pkg="responsive" type="responsive" name="responsive" output="screen"
+    args="$(arg script_args)">
   </node>
 
   <!-- Rviz -->

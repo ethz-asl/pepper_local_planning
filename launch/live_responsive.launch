@@ -1,19 +1,16 @@
 <?xml version="1.0"?>
 <launch>
-  <arg name="mapname" default="asl" />
-  <arg name="mapfolder" default="$(find ia_ros)/../python/maps"/>
+  <arg name="mapname" default="asl_office_j" />
+  <arg name="mapfolder" default="$(env HOME)/maps"/>
+  <arg name="mapframe" default="reference_map"/>
   <arg name="script_args" default=""/>
-
-  <!-- Simulator -->
-  <include file="$(find ia_ros)/launch/ros_sim_node.launch">
-    <arg name="rviz" value="false" />
-  </include>
 
   <!-- Gmapping & Map Matching -->
   <include file="$(find asl_pepper_gmapping)/launch/gmapping.launch">
     <arg name="output" value="log"/>
   </include>
-  <include file="$(find map_matcher)/launch/map_matcher.launch">
+  <include file="$(find map_matcher)/launch/map_matcher.launch" 
+    if="$(eval arg('mapfolder') != 'rostopic')">
     <arg name="output" value="log" />
     <arg name="slam_map_topic" value="/gmap"/>
     <arg name="reference_map_name" value="$(arg mapname)"/>
@@ -25,14 +22,13 @@
     name="global_planner" args="--hz" output="log" >
     <param name="reference_map_name" value="$(arg mapname)"/>
     <param name="reference_map_folder" value="$(arg mapfolder)"/>
-    <param name="reference_map_downsampling_passes" value="1" />
+    <param name="reference_map_frame" value="$(arg mapframe)"/>
     <param name="waypoint_distance" value="1.5" />
   </node>
 
-  <!-- ros_run_command does not forward node namespace to script, so the script gets param from absolute namespace /python_planner/PARAM_NAME -->
-  <node pkg="ros_run_command" type="ros_run_command" name="python_planner" output="screen"
-    args="python /home/daniel/Documents/responsive/scripts/responsive.py $(arg script_args)">
-    <param name="reference_map_name" value="$(arg mapname)"/>
+  <!-- Responsive planner -->
+  <node pkg="responsive" type="responsive" name="responsive" output="screen"
+    args="$(arg script_args)">
   </node>
 
   <!-- Rviz -->

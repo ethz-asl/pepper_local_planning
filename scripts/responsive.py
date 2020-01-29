@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from copy import deepcopy
 from matplotlib import pyplot as plt
 import numpy as np
