@@ -105,6 +105,7 @@ class Responsive(object):
                 waypoint_in_fix = waypoint_in_msg
             self.tf_goal_in_fix = (np.array([waypoint_in_fix[0], waypoint_in_fix[1], 0.]), # trans
                                    tf.transformations.quaternion_from_euler(0,0,0)) # quat
+            rospy.loginfo("Responsive: waypoint received and set.")
 
 
     def scan_callback(self, msg):
@@ -121,7 +122,7 @@ class Responsive(object):
             return
         if self.tf_goal_in_fix is None:
             self.tf_goal_in_fix = self.tf_rob_in_fix
-            print("goal set")
+            print("responsive: waypoint set to robot position (scan callback)")
         # TODO check that odom and tf are not old
 
         # measure rotation TODO
@@ -303,7 +304,7 @@ class Responsive(object):
                     print("couldn't reset goal: tf_rob_in_fix not found yet")
                 else:
                     self.tf_goal_in_fix = self.tf_rob_in_fix
-                    print("goal set")
+                    print("responsive: waypoint set to current position (assumed control)")
             self.STOP = False
         return TriggerResponse(True, "")
 
@@ -329,12 +330,12 @@ def parse_args():
     # deal with unknown arguments
     # ROS appends some weird args, ignore those, but not the rest
     if unknown_args:
-        rosparser = argparse.ArgumentParser()
-        rosparser.add_argument(
-                '__log:')
-        rosparser.add_argument(
-                '__name:')
-        rosargs = rosparser.parse_args(unknown_args)
+        non_ros_unknown_args = rospy.myargv(unknown_args)
+        if non_ros_unknown_args:
+            print("unknown arguments:")
+            print(non_ros_unknown_args)
+            parser.parse_args(args=["--help"])
+            raise ValueError
     return ARGS
 
 if __name__=="__main__":
