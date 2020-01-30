@@ -292,6 +292,8 @@ class Responsive(object):
         with self.lock:
             if not self.STOP:
                 print("Surrendering robot control")
+                cmd_vel_msg = Twist()
+                self.cmd_vel_pub.publish(cmd_vel_msg)
             self.STOP = True
         return TriggerResponse(True, "")
 
