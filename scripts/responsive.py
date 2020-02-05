@@ -32,7 +32,7 @@ class Responsive(object):
         self.kMaxObstacleVel_ms = 10.  # [m/s]
         self.kRobotComfortRadius_m = rospy.get_param("/robot_comfort_radius", 0.7)
         self.kRobotRadius_m = rospy.get_param("/robot_radius", 0.3)
-        self.kGesturesCooldownTime = rospy.Duration(3.)  # seconds
+        self.kGesturesCooldownTime = 3.  # seconds
         # vars
         self.msg_prev = None
         self.odom = None
@@ -45,7 +45,6 @@ class Responsive(object):
         self.GESTURES = False
         if args.gestures:
             self.GESTURES = True
-        self.last_gesture_time = None
         self.is_tracking_global_path = False
         # ROS
         rospy.init_node('responsive', anonymous=True)
@@ -324,14 +323,9 @@ class Responsive(object):
             is_static = np.linalg.norm(vel_in_rob[:2]) <= 0.5
             if is_in_front and is_close and is_static:
                 if not self.STOP and self.GESTURES:
-                    # enforce cooldown
-                    if self.last_gesture_time is not None:
-                        elapsed = rospy.Time.now() - self.last_gesture_time
-                        if elapsed < self.kGesturesCooldownTime:
-                            continue
-                    # publish
                     self.gestures_pub.publish(String("animations/Stand/Gestures/You_2"))
-                    self.last_gesture_time = rospy.Time.now()
+                    rospy.sleep(self.kGesturesCooldownTime)
+                    self.gestures_pub.publish(String("animations/Stand/Gestures/Desperate_4"))
                     return
 
     def enable_gestures_service_call(self, req):
