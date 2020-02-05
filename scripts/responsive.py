@@ -1,22 +1,22 @@
-#!/usr/bin/env python
 from copy import deepcopy
-from matplotlib import pyplot as plt
 import numpy as np
 import rospy
 import tf
 import threading
 from sensor_msgs.msg import LaserScan
-from nav_msgs.msg import Odometry, Path
-from geometry_msgs.msg import Twist, Quaternion
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
 from timeit import default_timer as timer
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Point, Twist
+from geometry_msgs.msg import Point
+from std_msgs.msg import String
 from std_srvs.srv import Trigger, TriggerResponse
 
 # local packages
-from pose2d import Pose2D, apply_tf, apply_tf_to_pose, inverse_pose2d
+from pose2d import Pose2D, apply_tf, apply_tf_to_vel, apply_tf_to_pose, inverse_pose2d
 import clustering
 import dynamic_window
+
 
 class Responsive(object):
     def __init__(self, args):
@@ -25,39 +25,56 @@ class Responsive(object):
         self.kLidarTopic = "/combined_scan"
         self.kFixedFrameTopic = "/pepper_robot/odom"
         self.kCmdVelTopic = "/cmd_vel"
+        self.kGesturesTopic = "/gestures"
         self.kGlobalWaypointTopic = "/global_planner/current_waypoint"
-        self.kFixedFrame = "odom" # ideally something truly fixed, like /map
+        self.kFixedFrame = "odom"  # ideally something truly fixed, like /map
         self.kRobotFrame = "base_footprint"
-        self.kMaxObstacleVel_ms = 10. # [m/s]
+        self.kMaxObstacleVel_ms = 10.  # [m/s]
         self.kRobotComfortRadius_m = rospy.get_param("/robot_comfort_radius", 0.7)
         self.kRobotRadius_m = rospy.get_param("/robot_radius", 0.3)
+        self.kGesturesCooldownTime = rospy.Duration(3.)  # seconds
         # vars
         self.msg_prev = None
         self.odom = None
         self.tf_rob_in_fix = None
         self.tf_goal_in_fix = None
-        self.lock = threading.Lock() # for avoiding race conditions
-        self.STOP = True # disables autonomous control
+        self.lock = threading.Lock()  # for avoiding race conditions
+        self.STOP = True  # disables autonomous control
         if args.no_stop:
             self.STOP = False
+        self.GESTURES = False
+        if args.gestures:
+            self.GESTURES = True
+        self.last_gesture_time = None
         self.is_tracking_global_path = False
         # ROS
         rospy.init_node('responsive', anonymous=True)
         rospy.Subscriber(self.kGlobalWaypointTopic, Marker, self.global_waypoint_callback, queue_size=1)
         rospy.Subscriber(self.kLidarTopic, LaserScan, self.scan_callback, queue_size=1)
         rospy.Subscriber(self.kFixedFrameTopic, Odometry, self.odom_callback, queue_size=1)
+        try:
+            from frame_msgs.msg import TrackedPersons
+            rospy.Subscriber("/rwth_tracker/tracked_persons", TrackedPersons,
+                             self.trackedpersons_callback, queue_size=1)
+        except ImportError:
+            pass
         self.pubs = [rospy.Publisher("debug{}".format(i), LaserScan, queue_size=1) for i in range(3)]
         self.cmd_vel_pub = rospy.Publisher(self.kCmdVelTopic, Twist, queue_size=1)
+        self.gestures_pub = rospy.Publisher(self.kGesturesTopic, String, queue_size=1)
         # tf
         self.tf_listener = tf.TransformListener()
         self.tf_br = tf.TransformBroadcaster()
         # Timers
         rospy.Timer(rospy.Duration(0.001), self.tf_callback)
         # Services
-        rospy.Service('stop_autonomous_motion', Trigger, 
-                self.stop_autonomous_motion_service_call)
-        rospy.Service('resume_autonomous_motion', Trigger, 
-                self.resume_autonomous_motion_service_call)
+        rospy.Service('stop_autonomous_motion', Trigger,
+                      self.stop_autonomous_motion_service_call)
+        rospy.Service('resume_autonomous_motion', Trigger,
+                      self.resume_autonomous_motion_service_call)
+        rospy.Service('enable_gestures', Trigger,
+                      self.enable_gestures_service_call)
+        rospy.Service('disable_gestures', Trigger,
+                      self.disable_gestures_service_call)
         try:
             rospy.spin()
         except KeyboardInterrupt:
@@ -71,16 +88,20 @@ class Responsive(object):
 
     def tf_callback(self, event=None):
         try:
-             self.tf_rob_in_fix = self.tf_listener.lookupTransform(self.kFixedFrame, self.kRobotFrame, rospy.Time(0))
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+            self.tf_rob_in_fix = self.tf_listener.lookupTransform(
+                self.kFixedFrame, self.kRobotFrame, rospy.Time(0)
+            )
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
             return
         # periodically publish goal tf
         if self.tf_goal_in_fix is not None:
-            self.tf_br.sendTransform(self.tf_goal_in_fix[0],
-                             self.tf_goal_in_fix[1],
-                             rospy.Time.now(),
-                             "goal",
-                             self.kFixedFrame)
+            self.tf_br.sendTransform(
+                self.tf_goal_in_fix[0],
+                self.tf_goal_in_fix[1],
+                rospy.Time.now(),
+                "goal",
+                self.kFixedFrame,
+            )
 
     def global_waypoint_callback(self, msg):
         """ If a global path is received (in map frame), try to track it """
@@ -89,13 +110,14 @@ class Responsive(object):
                 msg.pose.position.x,
                 msg.pose.position.y,
             ])
-            ## msg frame to fixed frame
+            # msg frame to fixed frame
             if self.kFixedFrame != msg.header.frame_id:
                 try:
-                     tf_msg_in_fix = self.tf_listener.lookupTransform(
-                             self.kFixedFrame,
-                             msg.header.frame_id,
-                             msg.header.stamp - rospy.Duration(0.1))
+                    tf_msg_in_fix = self.tf_listener.lookupTransform(
+                        self.kFixedFrame,
+                        msg.header.frame_id,
+                        msg.header.stamp - rospy.Duration(0.1),
+                    )
                 except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
                     print("Could not find transform from waypoint frame to fixed.")
                     print(e)
@@ -103,10 +125,9 @@ class Responsive(object):
                 waypoint_in_fix = apply_tf(waypoint_in_msg, Pose2D(tf_msg_in_fix))
             else:
                 waypoint_in_fix = waypoint_in_msg
-            self.tf_goal_in_fix = (np.array([waypoint_in_fix[0], waypoint_in_fix[1], 0.]), # trans
-                                   tf.transformations.quaternion_from_euler(0,0,0)) # quat
+            self.tf_goal_in_fix = (np.array([waypoint_in_fix[0], waypoint_in_fix[1], 0.]),  # trans
+                                   tf.transformations.quaternion_from_euler(0, 0, 0))  # quat
             rospy.loginfo("Responsive: waypoint received and set.")
-
 
     def scan_callback(self, msg):
         atic = timer()
@@ -130,7 +151,7 @@ class Responsive(object):
 
         # prediction
         dt = (msg.header.stamp - self.msg_prev.header.stamp).to_sec()
-        s_prev =  np.array(self.msg_prev.ranges)
+        s_prev = np.array(self.msg_prev.ranges)
         ds = (s - s_prev)
         max_ds = self.kMaxObstacleVel_ms * dt
         ds_capped = ds
@@ -139,31 +160,31 @@ class Responsive(object):
 
         # cluster
         EUCLIDEAN_CLUSTERING_THRESH_M = 0.05
-        angles = np.linspace(0, 2*np.pi, s_next.shape[0]+1, dtype=np.float32)[:-1]
+        angles = np.linspace(0, 2 * np.pi, s_next.shape[0] + 1, dtype=np.float32)[:-1]
         clusters, x, y = clustering.euclidean_clustering(s_next, angles,
                                                          EUCLIDEAN_CLUSTERING_THRESH_M)
         cluster_sizes = clustering.cluster_sizes(len(s_next), clusters)
         s_next[cluster_sizes <= 3] = 25
 
-
         # dwa
         # Get state
         # goal in robot frame
-        goal_in_robot_frame = apply_tf_to_pose(Pose2D(self.tf_goal_in_fix), inverse_pose2d(Pose2D(self.tf_rob_in_fix)))
+        goal_in_robot_frame = apply_tf_to_pose(
+            Pose2D(self.tf_goal_in_fix), inverse_pose2d(Pose2D(self.tf_rob_in_fix)))
         gx = goal_in_robot_frame[0]
         gy = goal_in_robot_frame[1]
-        
+
         # robot speed in robot frame
         u = self.odom.twist.twist.linear.x
         v = self.odom.twist.twist.linear.y
-        w = self.odom.twist.twist.angular.z
-
+#         w = self.odom.twist.twist.angular.z
 
         DWA_DT = 0.5
         COMFORT_RADIUS_M = self.kRobotComfortRadius_m
         MAX_XY_VEL = 0.5
-        tic = timer()
-        best_u, best_v, best_score = dynamic_window.linear_dwa(s_next,
+#         tic = timer()
+        best_u, best_v, best_score = dynamic_window.linear_dwa(
+            s_next,
             angles,
             u, v, gx, gy, DWA_DT,
             DV=0.05,
@@ -173,8 +194,8 @@ class Responsive(object):
             VMAX=MAX_XY_VEL,
             AMAX=10.,
             COMFORT_RADIUS_M=COMFORT_RADIUS_M,
-            )
-        toc = timer()
+        )
+#         toc = timer()
 #         print(best_u * DWA_DT, best_v * DWA_DT, best_score)
 #         print("DWA: {:.2f} Hz".format(1/(toc-tic)))
 
@@ -182,11 +203,10 @@ class Responsive(object):
         # TODO
         best_w = 0
         WMAX = 0.5
-        angle_to_goal = np.arctan2(gy, gx) # [-pi, pi]
-        if np.sqrt(gx * gx + gy * gy) > 0.5: # turn only if goal is far away
-            if np.abs(angle_to_goal) > (np.pi / 4/ 10): # deadzone
-                best_w = np.clip(angle_to_goal, -WMAX, WMAX) # linear ramp
-
+        angle_to_goal = np.arctan2(gy, gx)  # [-pi, pi]
+        if np.sqrt(gx * gx + gy * gy) > 0.5:  # turn only if goal is far away
+            if np.abs(angle_to_goal) > (np.pi / 4 / 10):  # deadzone
+                best_w = np.clip(angle_to_goal, -WMAX, WMAX)  # linear ramp
 
         if not self.STOP:
             # publish cmd_vel
@@ -285,8 +305,48 @@ class Responsive(object):
 
         atoc = timer()
         if self.args.hz:
-            print("DWA callback: {:.2f} Hz".format(1/(atoc-atic)))
+            print("DWA callback: {:.2f} Hz".format(1 / (atoc - atic)))
 
+    def trackedpersons_callback(self, msg):
+        try:
+            tf_msg_in_rob = self.tf_listener.lookupTransform(
+                self.kRobotFrame, msg.header.frame_id, msg.header.stamp)
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            return
+        p2_msg_in_rob = Pose2D(tf_msg_in_rob)
+        for track in msg.tracks:
+            pose = [track.pose.pose.position.x, track.pose.pose.position.y]
+            pose_in_rob = apply_tf(np.array([pose]), p2_msg_in_rob)[0]
+            vel = [track.twist.twist.linear.x, track.twist.twist.linear.y, 0]
+            vel_in_rob = apply_tf_to_vel(np.array(vel), p2_msg_in_rob)
+            is_in_front = pose_in_rob[0] > 0
+            is_close = np.linalg.norm(pose_in_rob[:2]) <= 2.
+            is_static = np.linalg.norm(vel_in_rob[:2]) <= 0.5
+            if is_in_front and is_close and is_static:
+                if not self.STOP and self.GESTURES:
+                    # enforce cooldown
+                    if self.last_gesture_time is not None:
+                        elapsed = rospy.Time.now() - self.last_gesture_time
+                        if elapsed < self.kGesturesCooldownTime:
+                            continue
+                    # publish
+                    self.gestures_pub.publish(String("animations/Stand/Gestures/You_2"))
+                    self.last_gesture_time = rospy.Time.now()
+                    return
+
+    def enable_gestures_service_call(self, req):
+        with self.lock:
+            if not self.GESTURES:
+                rospy.loginfo("Enabling gestures.")
+            self.GESTURES = True
+        return TriggerResponse(True, "")
+
+    def disable_gestures_service_call(self, req):
+        with self.lock:
+            if self.GESTURES:
+                rospy.loginfo("Disabling gestures.")
+            self.GESTURES = False
+        return TriggerResponse(True, "")
 
     def stop_autonomous_motion_service_call(self, req):
         with self.lock:
@@ -310,22 +370,31 @@ class Responsive(object):
             self.STOP = False
         return TriggerResponse(True, "")
 
+
 def parse_args():
     import argparse
-    ## Arguments
+    # Arguments
     parser = argparse.ArgumentParser(description='Responsive motion planner for pepper')
-    parser.add_argument('--no-stop',
-            action='store_true',
-            help='if set, the planner will immediately send cmd_vel instead of waiting for hand-over',
-            )
-    parser.add_argument('--hz',
-            action='store_true',
-            help='if set, prints planner frequency to script output',
-            )
-    parser.add_argument('--forward-only',
-            action='store_true',
-            help='if set, the DWA planner is only allowed to move forwards',
-            )
+    parser.add_argument(
+        '--no-stop',
+        action='store_true',
+        help='if set, the planner will immediately send cmd_vel instead of waiting for hand-over',
+    )
+    parser.add_argument(
+        '--hz',
+        action='store_true',
+        help='if set, prints planner frequency to script output',
+    )
+    parser.add_argument(
+        '--forward-only',
+        action='store_true',
+        help='if set, the DWA planner is only allowed to move forwards',
+    )
+    parser.add_argument(
+        '--gestures',
+        action='store_true',
+        help='if set, gestures are enabled from the start',
+    )
 
     ARGS, unknown_args = parser.parse_known_args()
 
@@ -340,6 +409,7 @@ def parse_args():
             raise ValueError
     return ARGS
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     args = parse_args()
     responsive = Responsive(args)
