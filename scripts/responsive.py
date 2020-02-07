@@ -17,6 +17,7 @@ from pose2d import Pose2D, apply_tf, apply_tf_to_vel, apply_tf_to_pose, inverse_
 import clustering
 import dynamic_window
 
+PLAN_EVEN_IF_STOPPED = False
 
 class Responsive(object):
     def __init__(self, args):
@@ -143,6 +144,8 @@ class Responsive(object):
         if self.tf_goal_in_fix is None:
             self.tf_goal_in_fix = self.tf_rob_in_fix
             print("responsive: waypoint set to robot position (scan callback)")
+        if self.STOP and not PLAN_EVEN_IF_STOPPED:
+            return
         # TODO check that odom and tf are not old
 
         # measure rotation TODO
