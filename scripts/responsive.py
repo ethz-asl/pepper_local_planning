@@ -65,7 +65,7 @@ class Responsive(object):
         self.tf_listener = tf.TransformListener()
         self.tf_br = tf.TransformBroadcaster()
         # Timers
-        rospy.Timer(rospy.Duration(0.001), self.tf_callback)
+        rospy.Timer(rospy.Duration(0.01), self.tf_callback)
         # Services
         rospy.Service('stop_autonomous_motion', Trigger,
                       self.stop_autonomous_motion_service_call)
