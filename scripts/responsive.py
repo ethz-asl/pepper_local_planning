@@ -125,9 +125,17 @@ class Responsive(object):
                 waypoint_in_fix = apply_tf(waypoint_in_msg, Pose2D(tf_msg_in_fix))
             else:
                 waypoint_in_fix = waypoint_in_msg
-            self.tf_goal_in_fix = (np.array([waypoint_in_fix[0], waypoint_in_fix[1], 0.]),  # trans
-                                   tf.transformations.quaternion_from_euler(0, 0, 0))  # quat
-            rospy.loginfo("Responsive: waypoint received and set.")
+            new_tf_goal_in_fix = (np.array([waypoint_in_fix[0], waypoint_in_fix[1], 0.]),  # trans
+                                  tf.transformations.quaternion_from_euler(0, 0, 0))  # quat
+            # detect changes
+            is_changed = True
+            if self.tf_goal_in_fix is not None:
+                if (np.allclose(self.tf_goal_in_fix[0], new_tf_goal_in_fix[0]) and
+                        np.allclose(self.tf_goal_in_fix[1], new_tf_goal_in_fix[1])):
+                    is_changed = False
+            self.tf_goal_in_fix = new_tf_goal_in_fix
+            if is_changed:
+                rospy.loginfo_throttle(5., "Responsive: new waypoint received and set.")
 
     def scan_callback(self, msg):
         atic = timer()
