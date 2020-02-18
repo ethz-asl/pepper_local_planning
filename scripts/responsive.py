@@ -18,6 +18,7 @@ import clustering
 import dynamic_window
 
 PLAN_EVEN_IF_STOPPED = False
+STEP_THROUGH_VEL = 0.2
 
 class Responsive(object):
     def __init__(self, args):
@@ -47,6 +48,7 @@ class Responsive(object):
         if args.gestures:
             self.GESTURES = True
         self.is_tracking_global_path = False
+        self.step_through_flag = False
         # ROS
         rospy.init_node('responsive', anonymous=True)
         rospy.Subscriber(self.kGlobalWaypointTopic, Marker, self.global_waypoint_callback, queue_size=1)
@@ -218,12 +220,22 @@ class Responsive(object):
             if np.abs(angle_to_goal) > (np.pi / 4 / 10):  # deadzone
                 best_w = np.clip(angle_to_goal, -WMAX, WMAX)  # linear ramp
 
+        # add safety margins
+        SIDEWAYS_FACTOR = 0.3 if self.args.forward_only else 1.
+        best_u_safe = np.clip(best_u * 0.5, -0.3, 0.3)
+        best_v_safe = np.clip(best_v * 0.5 * SIDEWAYS_FACTOR, -0.3, 0.3)
+
+        # step-through if necessary
+        if self.step_through_flag and self.args.forward_only:
+            if best_u_safe < STEP_THROUGH_VEL:
+                best_u_safe = STEP_THROUGH_VEL
+
+        # publish cmd_vel
         if not self.STOP:
             # publish cmd_vel
             cmd_vel_msg = Twist()
-            SIDEWAYS_FACTOR = 0.3 if self.args.forward_only else 1.
-            cmd_vel_msg.linear.x = np.clip(best_u * 0.5, -0.3, 0.3)
-            cmd_vel_msg.linear.y = np.clip(best_v * 0.5 * SIDEWAYS_FACTOR, -0.3, 0.3)
+            cmd_vel_msg.linear.x = best_u_safe
+            cmd_vel_msg.linear.y = best_v_safe
             cmd_vel_msg.angular.z = best_w
             self.cmd_vel_pub.publish(cmd_vel_msg)
 
@@ -334,10 +346,12 @@ class Responsive(object):
             is_static = np.linalg.norm(vel_in_rob[:2]) <= 0.5
             if is_in_front and is_close and is_static:
                 if not self.STOP and self.GESTURES:
+                    self.step_through_flag = True
                     self.gestures_pub.publish(String("animations/Stand/Gestures/You_2"))
                     rospy.sleep(self.kGesturesCooldownTime)
                     self.gestures_pub.publish(String("animations/Stand/Gestures/Desperate_4"))
                     rospy.sleep(self.kGesturesCooldownTime)
+                    self.step_through_flag = False
                     return
 
     def enable_gestures_service_call(self, req):
