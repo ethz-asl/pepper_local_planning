@@ -337,6 +337,7 @@ class Responsive(object):
                     self.gestures_pub.publish(String("animations/Stand/Gestures/You_2"))
                     rospy.sleep(self.kGesturesCooldownTime)
                     self.gestures_pub.publish(String("animations/Stand/Gestures/Desperate_4"))
+                    rospy.sleep(self.kGesturesCooldownTime)
                     return
 
     def enable_gestures_service_call(self, req):
