@@ -23,6 +23,7 @@ STEP_THROUGH_VEL = 0.2
 class Responsive(object):
     def __init__(self, args):
         self.args = args
+        rospy.init_node('responsive', anonymous=True)
         # consts
         self.kLidarTopic = "/combined_scan"
         self.kFixedFrameTopic = "/pepper_robot/odom"
@@ -50,7 +51,6 @@ class Responsive(object):
         self.is_tracking_global_path = False
         self.step_through_flag = False
         # ROS
-        rospy.init_node('responsive', anonymous=True)
         rospy.Subscriber(self.kGlobalWaypointTopic, Marker, self.global_waypoint_callback, queue_size=1)
         rospy.Subscriber(self.kLidarTopic, LaserScan, self.scan_callback, queue_size=1)
         rospy.Subscriber(self.kFixedFrameTopic, Odometry, self.odom_callback, queue_size=1)
