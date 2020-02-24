@@ -35,7 +35,7 @@ class Responsive(object):
         self.kMaxObstacleVel_ms = 10.  # [m/s]
         self.kRobotComfortRadius_m = rospy.get_param("/robot_comfort_radius", 0.7)
         self.kRobotRadius_m = rospy.get_param("/robot_radius", 0.3)
-        self.kGesturesCooldownTime = 3.  # seconds
+        self.kGesturesCooldownTime = 6.  # seconds
         # vars
         self.msg_prev = None
         self.odom = None
@@ -63,6 +63,7 @@ class Responsive(object):
         self.pubs = [rospy.Publisher("debug{}".format(i), LaserScan, queue_size=1) for i in range(3)]
         self.cmd_vel_pub = rospy.Publisher(self.kCmdVelTopic, Twist, queue_size=1)
         self.gestures_pub = rospy.Publisher(self.kGesturesTopic, String, queue_size=1)
+        self.speech_pub = rospy.Publisher("/speech", String, queue_size=1)
         # tf
         self.tf_listener = tf.TransformListener()
         self.tf_br = tf.TransformBroadcaster()
@@ -347,6 +348,7 @@ class Responsive(object):
             if is_in_front and is_close and is_static:
                 if not self.STOP and self.GESTURES:
                     self.step_through_flag = True
+                    self.speech_pub.publish(String("I'm passing through, thank you!")
                     self.gestures_pub.publish(String("animations/Stand/Gestures/You_2"))
                     rospy.sleep(self.kGesturesCooldownTime)
                     self.gestures_pub.publish(String("animations/Stand/Gestures/Desperate_4"))
