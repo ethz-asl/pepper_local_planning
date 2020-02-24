@@ -348,7 +348,7 @@ class Responsive(object):
             if is_in_front and is_close and is_static:
                 if not self.STOP and self.GESTURES:
                     self.step_through_flag = True
-                    self.speech_pub.publish(String("I'm passing through, thank you!")
+                    self.speech_pub.publish(String("I'm passing through, thank you!"))
                     self.gestures_pub.publish(String("animations/Stand/Gestures/You_2"))
                     rospy.sleep(self.kGesturesCooldownTime)
                     self.gestures_pub.publish(String("animations/Stand/Gestures/Desperate_4"))
