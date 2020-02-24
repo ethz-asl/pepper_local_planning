@@ -115,11 +115,16 @@ class Responsive(object):
             ])
             # msg frame to fixed frame
             if self.kFixedFrame != msg.header.frame_id:
+                time = msg.header.stamp
+                try:
+                    time = msg.header.stamp - rospy.Duration(0.1)
+                except TypeError:
+                    pass
                 try:
                     tf_msg_in_fix = self.tf_listener.lookupTransform(
                         self.kFixedFrame,
                         msg.header.frame_id,
-                        msg.header.stamp - rospy.Duration(0.1),
+                        time,
                     )
                 except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
                     print("Could not find transform from waypoint frame to fixed.")
