@@ -18,7 +18,7 @@ import clustering
 import dynamic_window
 
 PLAN_EVEN_IF_STOPPED = False
-STEP_THROUGH_VEL = 0.1
+STEP_THROUGH_VEL = 0.7
 
 class Responsive(object):
     def __init__(self, args):
