@@ -1,3 +1,4 @@
+# cython: profile=False
 # distutils: language=c++
 
 from libcpp cimport bool
@@ -149,4 +150,289 @@ def linear_dwa(np.float32_t[:] s_next,
     return best_u, best_v, best_score
 
 
+# below for diff-drive DWA -----------------------------------------------------------------
 
+def angle_difference_rad(target_angle, angle):
+    """     / angle
+           /
+          / d
+         /)___________ target
+    """
+    delta_angle = angle - target_angle
+    delta_angle = np.arctan2(np.sin(delta_angle), np.cos(delta_angle))  # now in [-pi, pi]
+    return delta_angle
+
+class NavigationPlanner(object):
+    robot_radius = 0.3  # [m]
+    safety_distance = 0.1  # [m]
+    robot_max_speed = 1.  # [m/s]
+    robot_max_w = 1. # [rad/s]
+    robot_max_accel = 0.5  # [m/s^2]
+    robot_max_w_dot = 10.  # [rad/s^2]
+
+    def __init__(self):
+        raise NotImplementedError
+
+    def set_static_obstacles(self, static_obstacles):
+        self.static_obstacles = static_obstacles
+
+    def compute_cmd_vel(self, crowd, robot_pose, goal, show_plot=True, debug=False):
+        raise NotImplementedError
+
+class DynamicWindowApproachNavigationPlanner(NavigationPlanner):
+    def __init__(self):
+        # dynamic window parameters
+        self.speed_resolution = 0.01  # [m/s]
+        self.rot_resolution = 0.02  # [rad/s]
+        self.prediction_horizon = 3.0  # [s]
+        self.robot_is_stuck_velocity = 0.001
+        # cost parameters
+        self.goal_cost_weight = 0.15
+        self.speed_cost_weight = 1.
+        self.obstacle_cost_weight = 1.0
+        # distance from robot to obstacle surface at which to ignore the obstacle
+        # should be bigger than the robot radius
+        self.obstacle_ignore_distance = 0.6
+
+    def compute_cmd_vel(self, crowd, robot_pose, goal, show_plot=True, debug=False):
+        x, y, th, vx, vy, w = robot_pose
+        v = np.sqrt(vx*vx + vy*vy)
+
+        # these params could be defined in init, or received from simulator
+        human_radius = 0.3
+        dt = 0.1  # time step [s]
+
+        # Initialize the dynamic window
+        # Velocity limits
+        DWv_speed = [-self.robot_max_speed, self.robot_max_speed]
+        DWv_rot = [-self.robot_max_w, self.robot_max_w]
+
+        # Acceleration limits
+        DWa_speed = [v - self.robot_max_accel * dt, v + self.robot_max_accel * dt]
+        DWa_rot = [w - self.robot_max_w_dot * dt, w + self.robot_max_w_dot * dt]
+
+        #  [v_min, v_max, yaw_rate_min, yaw_rate_max]
+        W_speed = [max(min(DWv_speed), min(DWa_speed)), min(max(DWv_speed), max(DWa_speed))]
+        W_rot = [max(min(DWv_rot), min(DWa_rot)), min(max(DWv_rot), max(DWa_rot))]
+
+        # initialize variables
+        best_cost = np.inf
+        worst_cost = -np.inf
+        best_cmd_vel = [0.0, 0.0]
+        best_trajectory = None
+
+        if show_plot:
+            from matplotlib import pyplot as plt
+            plt.ion()
+            plt.figure(1)
+            plt.cla()
+
+        # Sample window to find lowest cost
+        # evaluate all trajectory with sampled input in dynamic window
+        for speed in np.arange(min(W_speed), max(W_speed), self.speed_resolution):
+            for rot in np.arange(min(W_rot), max(W_rot), self.rot_resolution):
+                cmd_vel = (speed, rot)
+
+                # Trajectory
+                trajectory, cost = single_trajectory_and_costs(
+                        robot_pose, goal, cmd_vel,
+                        self.prediction_horizon, dt,
+                        crowd, self.static_obstacles, human_radius, self.obstacle_ignore_distance,
+                        self.robot_radius, self.robot_max_speed,
+                        self.goal_cost_weight, self.speed_cost_weight, self.obstacle_cost_weight,
+                )
+
+                # Update best cost
+                if cost <= best_cost:
+                    best_cost = cost
+                    best_cmd_vel = [speed, rot]
+                    best_trajectory = trajectory
+
+                if cost >= worst_cost:
+                    worst_cost = cost
+
+        if debug:
+            for speed in np.arange(min(W_speed), max(W_speed), self.speed_resolution):
+                for rot in np.arange(min(W_rot), max(W_rot), self.rot_resolution):
+                    cmd_vel = (speed, rot)
+
+                    # Trajectory
+                    trajectory, cost = single_trajectory_and_costs(
+                            robot_pose, goal, cmd_vel,
+                            self.prediction_horizon, dt,
+                            crowd, self.static_obstacles, human_radius, self.obstacle_ignore_distance,
+                            self.robot_radius, self.robot_max_speed,
+                            self.goal_cost_weight, self.speed_cost_weight, self.obstacle_cost_weight,
+                    )
+
+                    if debug:
+                        plt.plot(trajectory[:, 0], trajectory[:, 1],
+                                 c=plt.cm.viridis((cost - worst_cost) / (0.00001 + best_cost - worst_cost)))
+                        plt.title("{}".format(cost))
+                        plt.axis('equal')
+                        plt.pause(0.001)
+
+        if best_trajectory is None:
+            best_trajectory = np.array([robot_pose])
+            print("No solution found!")
+
+        # spin if stuck
+        if abs(best_cmd_vel[0]) < self.robot_is_stuck_velocity \
+                and abs(best_cmd_vel[1]) < self.robot_is_stuck_velocity:
+            best_cmd_vel[1] = max(W_rot)
+
+        if show_plot:
+            plt.ion()
+            plt.figure(1)
+            plt.cla()
+            plt.gca().add_artist(plt.Circle((robot_pose[0], robot_pose[1]), self.robot_radius, color='b'))
+            for id_, x, y in crowd:
+                plt.gca().add_artist(plt.Circle((x, y), human_radius, color='r'))
+            plt.plot(best_trajectory[:, 0], best_trajectory[:, 1], "-g")
+            plt.plot(goal[0], goal[1], "xb")
+            plt.axis("equal")
+            plt.xlim([0, 22])
+            plt.ylim([-5, 5])
+            plt.pause(0.1)
+
+        print("SOLUTION")
+        print(best_cost)
+        print(best_cmd_vel)
+
+        return tuple(best_cmd_vel)
+
+def single_trajectory_and_costs(robot_pose, goal, cmd_vel,
+                                prediction_horizon, dt,
+                                circle_obstacles, polygon_obstacles, human_radius, obstacle_ignore_distance,
+                                robot_radius, robot_max_speed,
+                                goal_cost_weight, speed_cost_weight, obstacle_cost_weight,
+                                ):
+    cmd_vel = np.array(cmd_vel, dtype=np.float32)
+    trajectory = predict_trajectory(robot_pose, cmd_vel, prediction_horizon, dt)
+    cost = total_cost(
+        trajectory, goal,
+        circle_obstacles, polygon_obstacles, human_radius, obstacle_ignore_distance,
+        robot_radius, robot_max_speed,
+        goal_cost_weight, speed_cost_weight, obstacle_cost_weight,
+    )
+    return trajectory, cost
+
+
+def step_robot_dynamics(np.float32_t[:] pose,
+                        np.float32_t[:] next_pose,
+                        np.float32_t[:] cmd_vel,
+                        np.float32_t dt):
+    # in
+    cdef np.float32_t x = pose[0]
+    cdef np.float32_t y = pose[1]
+    cdef np.float32_t th = pose[2]
+    cdef np.float32_t vx = pose[3]
+    cdef np.float32_t vy = pose[4]
+    cdef np.float32_t w = pose[5]
+    cdef np.float32_t speed = cmd_vel[0]
+    cdef np.float32_t rot = cmd_vel[1]
+    cdef np.float32_t next_x = 0.
+    cdef np.float32_t next_y = 0.
+    cdef np.float32_t next_th = 0.
+    cdef np.float32_t next_vx = 0.
+    cdef np.float32_t next_vy = 0.
+    cdef np.float32_t next_w = 0.
+
+    # first apply small rotation
+    next_th = th + rot * dt
+    # update velocities (no momentum)
+    next_vx = speed * ccos(next_th)
+    next_vy = speed * csin(next_th)
+    next_w = rot
+    # then move along new angle
+    next_x = x + next_vx * dt
+    next_y = y + next_vy * dt
+
+    # out
+    next_pose[0] = next_x
+    next_pose[1] = next_y
+    next_pose[2] = next_th
+    next_pose[3] = next_vx
+    next_pose[4] = next_vy
+    next_pose[5] = next_w
+
+def predict_trajectory(pose, cmd_vel, prediction_horizon, dt):
+    # initialize
+    timesteps = np.arange(0, prediction_horizon, dt)
+    trajectory = np.zeros((len(timesteps)+1, pose.shape[0]), dtype=np.float32)
+    trajectory[0] = pose * 1.
+    # fill trajectory poses
+    for i, time in enumerate(timesteps):
+        step_robot_dynamics(trajectory[i], trajectory[i+1], cmd_vel, dt)
+
+    return trajectory
+
+def total_cost(trajectory, goal,
+               circle_obstacles, polygon_obstacles, human_radius, obstacle_ignore_distance,
+               robot_radius, robot_max_speed,
+               goal_cost_weight, speed_cost_weight, obstacle_cost_weight,
+               ):
+    return (
+        goal_cost_weight * goal_cost(trajectory, goal, robot_radius) +
+        speed_cost_weight * speed_cost(trajectory, robot_max_speed) +
+        obstacle_cost_weight * obstacles_cost(trajectory,
+                                              circle_obstacles, human_radius,
+                                              polygon_obstacles,
+                                              robot_radius, obstacle_ignore_distance)
+    )
+
+
+def obstacles_cost(trajectory,
+                   circle_obstacles, circle_radii,
+                   polygon_obstacles,
+                   robot_radius, obstacle_ignore_distance):
+
+    # static obstacles
+    polygons_cost = 0.
+    for obs in polygon_obstacles:
+        # TODO
+        distances = np.array([np.inf])
+        if np.any(distances <= robot_radius):
+            polygons_cost = np.inf
+        else:
+            polygons_cost = 1. / distances
+
+    # circular obstacles
+    circulars_cost = 0.
+    if len(circle_obstacles) > 0:
+        xy_obstacles = circle_obstacles[:, 1:3]
+        # dx, dy distance between every obstacle and every pose in the trajectory
+        deltas = trajectory[:, None, :2] - xy_obstacles[None, :, :2] # [timesteps, obstacles, xy]
+        # distance from obstacle surfaces
+        distances = np.linalg.norm(deltas, axis=-1) - circle_radii
+        min_dist = np.min(distances)
+        if min_dist <= robot_radius:
+            circulars_cost = np.inf
+        elif min_dist > obstacle_ignore_distance:
+            circulars_cost = 0
+        else:
+            circulars_cost = 1. / np.min(distances)
+
+    return max(polygons_cost, circulars_cost)
+
+def goal_cost(trajectory, goal, robot_radius):
+    # looking only at the last step in the trajectory
+    x, y, th, vx, vy, w = trajectory[-1]
+    gx, gy = goal
+    # cost increases if the final robot heading points away from the goal
+    goal_heading = np.arctan2(gy - y, gx - x)  # heading of robot-goal vector
+    robot_heading = th
+    heading_difference_angle = angle_difference_rad(goal_heading, robot_heading)
+    cost = np.abs(heading_difference_angle)
+
+    # no cost if goal is reached
+    if np.sqrt((gy - y)**2 + (gx - x)**2) <= robot_radius:
+        cost = 0
+
+    return cost
+
+def speed_cost(trajectory, robot_max_speed):
+    # 0 if robot goes at max speed, >0 linearly otherwise
+    x, y, th, vx, vy, w = trajectory[-1]
+    speed = np.sqrt(vx*vx + vy*vy)
+    return robot_max_speed - speed
