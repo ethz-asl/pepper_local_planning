@@ -1,7 +1,6 @@
 from copy import deepcopy
 import numpy as np
 import rospy
-import tf
 import threading
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
@@ -11,6 +10,21 @@ from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 from std_msgs.msg import String
 from std_srvs.srv import Trigger, TriggerResponse
+
+def remove_python2_entries_from_sys_path():
+    """ sourcing ros means adding its python2 paths to sys.path. This creates incompatibilities when
+    importing tf, so we remove them """
+    import sys
+    if sys.version[0] == str(3):
+        new_path = []
+        for p in sys.path:
+            if "python2" in p:
+                print("REMOVING python2 entry from sys.path: {}".format(p))
+                continue
+            new_path.append(p)
+        sys.path = new_path
+remove_python2_entries_from_sys_path()
+import tf
 
 # local packages
 from pose2d import Pose2D, apply_tf, apply_tf_to_vel, apply_tf_to_pose, inverse_pose2d
