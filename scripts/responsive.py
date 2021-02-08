@@ -57,6 +57,7 @@ class Responsive(object):
         self.tf_goal_in_fix = None
         self.lock = threading.Lock()  # for avoiding race conditions
         self.STOP = True  # disables autonomous control
+        self.last_tf_publish_time = None  # needed because of new TF_REPEATED_DATA warnings
         if args.no_stop:
             self.STOP = False
         self.GESTURES = False
@@ -111,14 +112,20 @@ class Responsive(object):
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
             return
         # periodically publish goal tf
+        time = rospy.Time.now()
+        if self.last_tf_publish_time and time == self.last_tf_publish_time:
+            # this should not happen, as we told ROS we want to run the callback every 10ms,
+            # but it still does. what the hell?
+            return
         if self.tf_goal_in_fix is not None:
             self.tf_br.sendTransform(
                 self.tf_goal_in_fix[0],
                 self.tf_goal_in_fix[1],
-                rospy.Time.now(),
+                time,
                 "goal",
                 self.kFixedFrame,
             )
+        self.last_tf_publish_time = time
 
     def global_waypoint_callback(self, msg):
         """ If a global path is received (in map frame), try to track it """
