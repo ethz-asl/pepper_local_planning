@@ -10,7 +10,7 @@ from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 from std_msgs.msg import String
 from std_srvs.srv import Trigger, TriggerResponse
-from rds_network_ros.srv import VelocityCommandCorrectionRDS
+from rds_network_ros.srv import VelocityCommandCorrectionRDS, VelocityCommandCorrectionRDSRequest
 from pose2d import Pose2D, apply_tf, apply_tf_to_vel, apply_tf_to_pose, inverse_pose2d
 
 def remove_python2_entries_from_sys_path():
@@ -107,19 +107,21 @@ class RDSPlanner(object):
 
     def rds_correction(self, gx, gy):
         wpt_xy_in_rob = np.array([gx, gy])
-        nominal_cmd_vel = wpt_xy_in_rob / np.linalg.norm(wpt_xy_in_rob) * self.kIdealVelocity
+        nominal_cmd_vel = np.array([0,0])
+        if np.linalg.norm(wpt_xy_in_rob) != 0.:
+            nominal_cmd_vel = wpt_xy_in_rob / np.linalg.norm(wpt_xy_in_rob) * self.kIdealVelocity
 
         # x is forward, y is left in cmd_vel. In rds, x is right, y is forward
         forward = nominal_cmd_vel[0]
         left = nominal_cmd_vel[1]
 
         virtual_center_y = 0.1
-        request = VelocityCommandCorrectionRDS()
+        request = VelocityCommandCorrectionRDSRequest()
         request.nominal_command.linear = forward
         request.nominal_command.angular = left / virtual_center_y
         request.capsule_center_front_y = virtual_center_y+0.01
         request.capsule_center_rear_y = virtual_center_y-0.01
-        request.capsule_radius = self.kRobotRadius
+        request.capsule_radius = self.kRobotRadius_m
         request.reference_point_y = virtual_center_y
         request.rds_tau = 1.0
         request.rds_delta = 0.05
@@ -250,9 +252,11 @@ class RDSPlanner(object):
                 best_w = np.clip(angle_to_goal, -WMAX, WMAX)  # linear ramp
 
         # add safety margins
-        SIDEWAYS_FACTOR = 0.3 if self.args.forward_only else 1.
-        best_u_safe = np.clip(best_u * 0.5, -0.3, 0.3)
-        best_v_safe = np.clip(best_v * 0.5 * SIDEWAYS_FACTOR, -0.3, 0.3)
+#         SIDEWAYS_FACTOR = 0.3 if self.args.forward_only else 1.
+#         best_u_safe = np.clip(best_u * 0.5, -0.3, 0.3)
+#         best_v_safe = np.clip(best_v * 0.5 * SIDEWAYS_FACTOR, -0.3, 0.3)
+        best_u_safe = best_u
+        best_v_safe = best_v
 
         # step-through if necessary
         if self.step_through_flag and self.args.forward_only:
@@ -266,7 +270,8 @@ class RDSPlanner(object):
             cmd_vel_msg.linear.x = best_u_safe
             cmd_vel_msg.linear.y = best_v_safe
             cmd_vel_msg.angular.z = best_w
-            self.cmd_vel_pub.publish(cmd_vel_msg)
+            if not np.isnan(best_u_safe) and not np.isnan(best_v_safe):
+                self.cmd_vel_pub.publish(cmd_vel_msg)
 
         # publish cmd_vel vis
         pub = rospy.Publisher("/dwa_cmd_vel", Marker, queue_size=1)

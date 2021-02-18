@@ -27,10 +27,17 @@
   </node>
 
   <!-- Launch holonomic RDS server and its GUI -->
-  <include file="$(find rds_ros)/launch/rds_holonomic.launch" />
+  <node pkg="tf2_ros" type="static_transform_publisher"
+		name="tf_rear_lidar_broadcaster"
+		args="-0.1 0 0 0 0 0 1 base_footprint tf_rds" />
+  <node name="rds" pkg="rds_ros" type="rds_ros_node">
+    <remap from="/front_lidar/scan" to="/sick_laser_front/scan"/>
+    <remap from="/rear_lidar/scan" to="/sick_laser_rear/scan"/>
+  </node>
+  <node name="gui" pkg="rds_gui_ros" type="rds_gui_ros_node" />
   <!-- RDS planner -->
   <node pkg="responsive" type="rds_planner" name="rds_planner" output="screen"
-    args="$(arg script_args)">
+    args="$(arg script_args) --no-stop">
   </node>
 
   <!-- Rviz -->
