@@ -176,7 +176,7 @@ class Responsive(object):
             print("odom not received yet")
             return
         if self.tf_rob_in_fix is None:
-            print("tf_rob_in_fix not found yet")
+            rospy.logwarn_throttle(3., "tf_rob_in_fix not found yet")
             return
         if self.tf_goal_in_fix is None:
             self.tf_goal_in_fix = self.tf_rob_in_fix
